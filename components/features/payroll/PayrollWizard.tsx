@@ -24,9 +24,11 @@ import {
 import { toast } from "sonner";
 import { usePayrollWizardStore } from "@/stores/payrollWizard";
 import { useWalletStore } from "@/stores/walletStore";
+import { useTreasuryReserveStore } from "@/stores/treasuryReserve";
+import { evaluateTreasuryReserve } from "@/lib/treasury/reserveConfig";
 import { EXPECTED_NETWORK } from "@/components/providers/StellarProvider";
 import { IncidentBanner } from "@/components/ui/IncidentBanner";
-import { MOCK_EMPLOYEES, MOCK_PAYROLL_RUNS, MOCK_TREASURY_BALANCE } from "@/lib/api/mockData";
+import { MOCK_COMPANIES, MOCK_EMPLOYEES, MOCK_PAYROLL_RUNS, MOCK_TREASURY_BALANCE } from "@/lib/api/mockData";
 import PayrollReceipt from "./PayrollReceipt";
 import type { PayrollWizardStep } from "@/types";
 import { trackEvent, mapErrorToType, bucketEmployeeCount } from "@/lib/telemetry";
@@ -479,9 +481,15 @@ function ConfirmStep({
   const store = usePayrollWizardStore();
   
   const { isProofNearingExpiration, treasuryBalanceOverride } = store;
+  const reserveThreshold = useTreasuryReserveStore((s) => s.reserveThreshold);
   const treasuryBalance = treasuryBalanceOverride !== null && treasuryBalanceOverride !== undefined 
     ? treasuryBalanceOverride 
     : MOCK_TREASURY_BALANCE.balance;
+
+  const reserve = useMemo(
+    () => evaluateTreasuryReserve({ balance: treasuryBalance, payrollTotal: totalAmount, threshold: reserveThreshold }),
+    [treasuryBalance, totalAmount, reserveThreshold],
+  );
 
   const currentPeriod = useMemo(() => {
     const d = new Date();
@@ -499,8 +507,8 @@ function ConfirmStep({
     const list: string[] = [];
 
     // 1. Treasury balance check
-    if (treasuryBalance < totalAmount) {
-      list.push(`Treasury balance is insufficient: $${treasuryBalance.toLocaleString()} available, $${totalAmount.toLocaleString()} required.`);
+    if (reserve.status === "insufficient" && reserve.message) {
+      list.push(reserve.message);
     }
 
     // 2. Proof status check
@@ -526,14 +534,14 @@ function ConfirmStep({
     }
 
     return list;
-  }, [treasuryBalance, totalAmount, store.proofStatus, selectedEmployees]);
+  }, [reserve, store.proofStatus, selectedEmployees, totalAmount]);
 
   const warnings = useMemo(() => {
     const list: string[] = [];
 
-    // 1. Treasury buffer warning
-    if (treasuryBalance >= totalAmount && treasuryBalance - totalAmount < 25000) {
-      list.push(`Treasury balance ($${treasuryBalance.toLocaleString()}) is approaching the minimum safety buffer threshold (less than $25,000 remaining after run).`);
+    // 1. Treasury buffer warning against the configured reserve threshold
+    if (reserve.status === "low-buffer" && reserve.message) {
+      list.push(reserve.message);
     }
 
     // 2. Proof expiration warning
@@ -551,7 +559,7 @@ function ConfirmStep({
     }
 
     return list;
-  }, [treasuryBalance, totalAmount, store.proofStatus, isProofNearingExpiration, selectedEmployees]);
+  }, [reserve, store.proofStatus, isProofNearingExpiration, selectedEmployees]);
 
   const state: "ready" | "warning" | "blocked" = useMemo(() => {
     if (blockers.length > 0) return "blocked";
@@ -710,13 +718,13 @@ function ConfirmStep({
           <div className="flex justify-between items-center">
             <h4 className="text-sm font-semibold text-gray-800">Treasury Readiness</h4>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-              treasuryBalance < totalAmount
+              reserve.status === "insufficient"
                 ? "bg-red-100 text-red-800"
-                : treasuryBalance - totalAmount < 25000
+                : reserve.status === "low-buffer"
                 ? "bg-amber-100 text-amber-800"
                 : "bg-green-100 text-green-800"
             }`}>
-              {treasuryBalance < totalAmount ? "Insufficient" : treasuryBalance - totalAmount < 25000 ? "Low Buffer" : "Funded"}
+              {reserve.status === "insufficient" ? "Insufficient" : reserve.status === "low-buffer" ? "Low Buffer" : "Funded"}
             </span>
           </div>
           <div className="text-sm space-y-1.5">

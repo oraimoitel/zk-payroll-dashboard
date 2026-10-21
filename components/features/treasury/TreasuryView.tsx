@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle, ArrowDownLeft, Plus } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle, ArrowDownLeft, Plus, Settings } from "lucide-react";
+import { useTreasuryReserveStore } from "@/stores/treasuryReserve";
+import { formatReserveThreshold } from "@/lib/treasury/reserveConfig";
 import { MOCK_TREASURY_BALANCE, MOCK_TRANSACTIONS, MOCK_COMPANIES } from "@/lib/api/mockData";
 import FundingForecast from "./FundingForecast";
 import StatusBadge from "@/components/ui/StatusBadge";
 
 function TreasuryView() {
   const [toastVisible, setToastVisible] = useState(false);
+  const reserveThreshold = useTreasuryReserveStore((s) => s.reserveThreshold);
 
   const { balance, projectedPayroll, lastFunded } = MOCK_TREASURY_BALANCE;
   const company = MOCK_COMPANIES[0];
@@ -23,9 +27,18 @@ function TreasuryView() {
 
   return (
     <section aria-labelledby="treasury-heading" className="space-y-6">
-      <h2 id="treasury-heading" className="text-lg font-semibold text-gray-900">
-        Treasury
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="treasury-heading" className="text-lg font-semibold text-gray-900">
+          Treasury
+        </h2>
+        <Link
+          href="/settings"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+        >
+          <Settings className="w-4 h-4" aria-hidden="true" />
+          Reserve settings
+        </Link>
+      </div>
 
       {isLowBalance && (
         <div
@@ -81,6 +94,9 @@ function TreasuryView() {
               {isLowBalance ? "Deficit after payroll" : "Surplus after payroll"}
             </span>
           </div>
+          <span className="text-xs text-gray-500 mt-1 block">
+            Required reserve: {formatReserveThreshold(reserveThreshold)}
+          </span>
         </article>
       </div>
 
